@@ -1,0 +1,187 @@
+import axios, { AxiosInstance } from 'axios'
+import {
+  User,
+  AuthResponse,
+  Producto,
+  Categoria,
+  Venta,
+  CrearVentaRequest,
+  DashboardResumen,
+  Prediccion,
+  ReporteAnalisis,
+} from '@/types'
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+
+class ApiClient {
+  private client: AxiosInstance
+  private token: string | null = null
+
+  constructor() {
+    this.client = axios.create({
+      baseURL: API_BASE_URL,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+
+    // Interceptor para agregar el token a cada request
+    this.client.interceptors.request.use((config) => {
+      if (this.token) {
+        config.headers.Authorization = `Bearer ${this.token}`
+      }
+      return config
+    })
+
+    // Cargar token del localStorage si existe
+    if (typeof window !== 'undefined') {
+      this.token = localStorage.getItem('access_token')
+    }
+  }
+
+  setToken(token: string) {
+    this.token = token
+    localStorage.setItem('access_token', token)
+  }
+
+  clearToken() {
+    this.token = null
+    localStorage.removeItem('access_token')
+  }
+
+  // AUTH ENDPOINTS
+  async login(email: string, password: string) {
+    const response = await this.client.post<AuthResponse>('/auth/login', {
+      email,
+      password,
+    })
+    return response.data
+  }
+
+  async getMe() {
+    const response = await this.client.get<User>('/auth/me')
+    return response.data
+  }
+
+  // PRODUCTOS ENDPOINTS
+  async getProductos(skip = 0, limit = 50, activo?: boolean) {
+    const response = await this.client.get<Producto[]>('/productos', {
+      params: { skip, limit, activo },
+    })
+    return response.data
+  }
+
+  async getProductoByBarcode(barcode: string) {
+    const response = await this.client.get<Producto>(
+      `/productos/${barcode}`
+    )
+    return response.data
+  }
+
+  async createProducto(producto: Omit<Producto, 'id' | 'fecha_creacion' | 'fecha_actualizacion'>) {
+    const response = await this.client.post<Producto>('/productos', producto)
+    return response.data
+  }
+
+  async getCategorias() {
+    const response = await this.client.get<Categoria[]>('/productos/categorias')
+    return response.data
+  }
+
+  async createCategoria(nombre: string, descripcion?: string) {
+    const response = await this.client.post<Categoria>('/productos/categorias', {
+      nombre,
+      descripcion,
+    })
+    return response.data
+  }
+
+  // VENTAS ENDPOINTS
+  async createVenta(venta: CrearVentaRequest) {
+    const response = await this.client.post<Venta>('/ventas/boleta', venta)
+    return response.data
+  }
+
+  async getVentas(skip = 0, limit = 50) {
+    const response = await this.client.get<Venta[]>('/ventas', {
+      params: { skip, limit },
+    })
+    return response.data
+  }
+
+  async getVenta(ventaId: number) {
+    const response = await this.client.get<Venta>(`/ventas/${ventaId}`)
+    return response.data
+  }
+
+  async getProductosBajoStock() {
+    const response = await this.client.get<Producto[]>('/ventas/stock/bajo-stock')
+    return response.data
+  }
+
+  // ANALYTICS ENDPOINTS
+  async getDashboardResumen() {
+    const response = await this.client.get<DashboardResumen>(
+      '/analytics/dashboard/resumen'
+    )
+    return response.data
+  }
+
+  async getPredicciones(mes?: number, año?: number) {
+    if (mes && año) {
+      const response = await this.client.get<Prediccion[]>(
+        `/analytics/predicciones/${mes}/${año}`
+      )
+      return response.data
+    }
+    const response = await this.client.get<Prediccion[]>(
+      '/analytics/prediccion'
+    )
+    return response.data
+  }
+
+  async getVentasPorMetodo() {
+    const response = await this.client.get('/analytics/ventas/por-metodo')
+    return response.data
+  }
+
+  // REPORTES ENDPOINTS
+  async getReporteMonthly() {
+    const response = await this.client.get<ReporteAnalisis>('/reports/monthly')
+    return response.data
+  }
+
+  async sendReporteMonthlyEmail() {
+    const response = await this.client.post('/reports/monthly/send-email')
+    return response.data
+  }
+
+  async getAnalisisVentas() {
+    const response = await this.client.get<string>('/reports/analisis-ventas')
+    return response.data
+  }
+
+  async downloadComprasCSV() {
+    const response = await this.client.get('/reports/descargar/compras', {
+      responseType: 'blob',
+    })
+    return response.data
+  }
+
+  async downloadVentasCSV() {
+    const response = await this.client.get('/reports/descargar/ventas', {
+      responseType: 'blob',
+    })
+    return response.data
+  }
+
+  async getChatbotResponse(pregunta: string) {
+    const response = await this.client.get<{ respuesta: string }>(
+      '/reports/chatbot',
+      { params: { pregunta } }
+    )
+    return response.data
+  }
+}
+
+export const apiClient = new ApiClient()
