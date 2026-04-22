@@ -3,6 +3,7 @@ import {
   User,
   AuthResponse,
   Producto,
+  ProductoCreateRequest,
   Categoria,
   Venta,
   CrearVentaRequest,
@@ -80,7 +81,7 @@ class ApiClient {
     return response.data
   }
 
-  async createProducto(producto: Omit<Producto, 'id' | 'fecha_creacion' | 'fecha_actualizacion'>) {
+  async createProducto(producto: ProductoCreateRequest) {
     const response = await this.client.post<Producto>('/productos', producto)
     return response.data
   }

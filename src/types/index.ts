@@ -31,6 +31,17 @@ export interface Producto {
   fecha_actualizacion: string
 }
 
+export interface ProductoCreateRequest {
+  codigo_barras: string
+  nombre: string
+  descripcion?: string
+  precio_venta: number
+  stock_actual: number
+  stock_minimo: number
+  categoria_id: number
+  proveedor_id?: number
+}
+
 export interface Categoria {
   id: number
   nombre: string

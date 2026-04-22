@@ -313,7 +313,7 @@ export default function VentasPage() {
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="date" />
                       <YAxis />
-                      <Tooltip formatter={(value) => formatCurrency(value)} />
+                      <Tooltip formatter={(value) => formatCurrency(Number(value) || 0)} />
                       <Line
                         type="monotone"
                         dataKey="total"
@@ -349,7 +349,7 @@ export default function VentasPage() {
                           />
                         ))}
                       </Pie>
-                      <Tooltip formatter={(value) => formatCurrency(value)} />
+                      <Tooltip formatter={(value) => formatCurrency(Number(value) || 0)} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>

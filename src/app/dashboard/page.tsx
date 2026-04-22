@@ -259,7 +259,7 @@ export default function DashboardPage() {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="name" />
                   <YAxis />
-                  <Tooltip formatter={(value) => formatCurrency(value)} />
+                  <Tooltip formatter={(value) => formatCurrency(Number(value) || 0)} />
                   <Bar dataKey="total" fill="#0ea5e9" />
                 </BarChart>
               </ResponsiveContainer>
