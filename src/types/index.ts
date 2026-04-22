@@ -38,6 +38,18 @@ export interface Categoria {
   fecha_creacion: string
 }
 
+export interface ScannerDetectResponse {
+  success: boolean
+  barcode: string | null
+  type?: string | null
+  message?: string
+  method_used?: 'full' | 'fast' | string
+}
+
+export interface ScannerDetectProductResponse extends ScannerDetectResponse {
+  product?: Producto | null
+}
+
 // Ventas
 export interface DetalleVenta {
   producto_id: number

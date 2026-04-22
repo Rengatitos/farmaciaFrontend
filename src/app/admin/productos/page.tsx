@@ -23,7 +23,15 @@ export default function AdminProductosPage() {
   const [showScanner, setShowScanner] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const scannerViewportRef = useRef<HTMLDivElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
+  const [cameraAspectRatio, setCameraAspectRatio] = useState(16 / 9)
+  const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([])
+  const [selectedCameraId, setSelectedCameraId] = useState('')
+  const isMobileDevice = typeof navigator !== 'undefined' ? /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) : false
+  const safeCameraAspectRatio = Number.isFinite(cameraAspectRatio) && cameraAspectRatio > 0 ? cameraAspectRatio : 16 / 9
+  const scannerViewportWidth = `min(100%, ${(safeCameraAspectRatio * 70).toFixed(2)}vh)`
+  const cameraPreviewWidth = safeCameraAspectRatio >= 1 ? 'clamp(90px, 22vw, 180px)' : 'clamp(80px, 18vw, 130px)'
 
   // Modal de producto
   const [showProductModal, setShowProductModal] = useState(false)
@@ -56,23 +64,72 @@ export default function AdminProductosPage() {
     loadCategorias()
   }, [user])
 
+  useEffect(() => {
+    if (!showScanner) return
+    listCameraDevices()
+  }, [showScanner])
+
+  const listCameraDevices = async () => {
+    if (!navigator.mediaDevices?.enumerateDevices) return
+
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices()
+      const videoInputs = devices.filter((device) => device.kind === 'videoinput')
+      setAvailableCameras(videoInputs)
+
+      if (!selectedCameraId && videoInputs.length > 0) {
+        const preferred = videoInputs.find((device) => /back|rear|trasera|environment/i.test(device.label))
+        setSelectedCameraId(preferred?.deviceId || videoInputs[0].deviceId)
+      }
+    } catch (error) {
+      console.error('No se pudieron listar cámaras', error)
+    }
+  }
+
+  const getVideoConstraints = () => {
+    if (!isMobileDevice && selectedCameraId) {
+      return {
+        deviceId: { exact: selectedCameraId },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+      }
+    }
+
+    return {
+      facingMode: { ideal: 'environment' as const },
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+    }
+  }
+
+  const handleCameraChange = (cameraId: string) => {
+    setSelectedCameraId(cameraId)
+
+    if (showScanner && streamRef.current) {
+      stopScanner()
+      setTimeout(() => {
+        startScanner()
+      }, 150)
+    }
+  }
+
   // Scanner de código de barras
   const startScanner = async () => {
     try {
       console.log('📷 Iniciando scanner de cámara...')
       
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: 'environment',
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-      })
+      const stream = await navigator.mediaDevices.getUserMedia({ video: getVideoConstraints() })
       
       console.log('✓ Stream de cámara obtenido', {
         videoTracks: stream.getVideoTracks().length,
         audioTracks: stream.getAudioTracks().length
       })
+
+      const videoTrack = stream.getVideoTracks()[0]
+      const trackSettings = videoTrack?.getSettings()
+      if (trackSettings?.width && trackSettings?.height) {
+        setCameraAspectRatio(trackSettings.width / trackSettings.height)
+      }
       
       streamRef.current = stream
       setShowScanner(true)
@@ -96,6 +153,9 @@ export default function AdminProductosPage() {
           
           const handleLoadedMetadata = () => {
             console.log('✓ Metadata de video cargado')
+            if (videoRef.current && videoRef.current.videoWidth > 0 && videoRef.current.videoHeight > 0) {
+              setCameraAspectRatio(videoRef.current.videoWidth / videoRef.current.videoHeight)
+            }
           }
           
           videoRef.current.addEventListener('play', handlePlay)
@@ -139,12 +199,24 @@ export default function AdminProductosPage() {
 
     const video = videoRef.current
     const canvas = canvasRef.current
+    const viewport = scannerViewportRef.current
     const context = canvas.getContext('2d', { willReadFrequently: true })
 
     if (!context) {
       console.error('✗ No se puede obtener contexto 2D del canvas')
       requestAnimationFrame(renderFrame)
       return
+    }
+
+    if (viewport) {
+      const dpr = window.devicePixelRatio || 1
+      const targetWidth = Math.max(1, Math.floor(viewport.clientWidth * dpr))
+      const targetHeight = Math.max(1, Math.floor(viewport.clientHeight * dpr))
+
+      if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+        canvas.width = targetWidth
+        canvas.height = targetHeight
+      }
     }
 
     try {
@@ -163,13 +235,13 @@ export default function AdminProductosPage() {
         let drawX = 0
         let drawY = 0
         
-        // Ajustar para mantener aspect ratio
+        // Ajustar para mantener aspect ratio sin recortar (contain)
         if (videoAspect > canvasAspect) {
-          drawWidth = canvas.height * videoAspect
-          drawX = (canvas.width - drawWidth) / 2
-        } else {
           drawHeight = canvas.width / videoAspect
           drawY = (canvas.height - drawHeight) / 2
+        } else {
+          drawWidth = canvas.height * videoAspect
+          drawX = (canvas.width - drawWidth) / 2
         }
         
         // Dibujar video en canvas
@@ -261,23 +333,9 @@ export default function AdminProductosPage() {
 
           console.log(`✓ Blob generado: ${blob.size} bytes, type: ${blob.type}`)
 
-          const formData = new FormData()
-          formData.append('image', blob, 'barcode.jpg')
-
           try {
             console.log('📤 Enviando imagen al servidor...')
-            const response = await fetch('http://localhost:8000/api/scanner/detect', {
-              method: 'POST',
-              body: formData,
-            })
-
-            if (!response.ok) {
-              console.error(`✗ Respuesta del servidor: ${response.status} ${response.statusText}`)
-              toast.error(`Error del servidor: ${response.statusText}`)
-              return
-            }
-
-            const data = await response.json()
+            const data = await apiClient.detectBarcode(blob, 'full', true)
             console.log('✓ Respuesta del servidor:', data)
 
             if (data.barcode) {
@@ -793,39 +851,64 @@ export default function AdminProductosPage() {
             </div>
 
             <div className="p-6">
-              {/* Video element - pequeño para que el navegador capture correctamente */}
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                style={{
-                  position: 'absolute',
-                  bottom: '10px',
-                  right: '10px',
-                  width: '100px',
-                  height: '75px',
-                  backgroundColor: '#000000',
-                  border: '2px solid #10b981',
-                  borderRadius: '4px',
-                  zIndex: 10,
-                  display: 'block',
-                  opacity: 0.8
-                }}
-              />
+              {/* Selector de cámara (más útil en desktop con webcam de celular) */}
+              {availableCameras.length > 1 && (
+                <div className="mb-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Cámara</label>
+                  <select
+                    value={selectedCameraId}
+                    onChange={(e) => handleCameraChange(e.target.value)}
+                    className="input w-full"
+                  >
+                    {availableCameras.map((camera, idx) => (
+                      <option key={camera.deviceId} value={camera.deviceId}>
+                        {camera.label || `Cámara ${idx + 1}`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {/* Canvas para mostrar video en tiempo real */}
-              <div className="relative bg-black rounded-lg overflow-hidden mb-4 w-full" style={{ height: '400px', backgroundColor: '#000000' }}>
+              <div
+                ref={scannerViewportRef}
+                className="relative bg-black rounded-lg overflow-hidden mb-4 mx-auto"
+                style={{
+                  backgroundColor: '#000000',
+                  width: scannerViewportWidth,
+                  aspectRatio: safeCameraAspectRatio,
+                  maxHeight: '70vh'
+                }}
+              >
                 <canvas
                   ref={canvasRef}
-                  width={1280}
-                  height={720}
                   style={{
                     width: '100%',
                     height: '100%',
                     backgroundColor: '#000000',
                     objectFit: 'contain',
                     display: 'block'
+                  }}
+                />
+                {/* Video element - pequeño para que el navegador capture correctamente */}
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  style={{
+                    position: 'absolute',
+                    bottom: '10px',
+                    right: '10px',
+                    width: cameraPreviewWidth,
+                    height: 'auto',
+                    aspectRatio: safeCameraAspectRatio,
+                    backgroundColor: '#000000',
+                    border: '2px solid #10b981',
+                    borderRadius: '4px',
+                    zIndex: 10,
+                    display: 'block',
+                    opacity: 0.8
                   }}
                 />
                 {/* Indicador de cámara activa */}

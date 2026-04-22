@@ -20,7 +20,7 @@ Frontend moderno y estético para el sistema de gestión integral de farmacia co
 ### Requisitos previos
 - Node.js 18+ 
 - npm o yarn
-- Backend ejecutándose en `http://localhost:8000`
+- Backend ejecutándose en `https://farmaciabackend-5843.onrender.com`
 
 ### Pasos de instalación
 
@@ -38,7 +38,7 @@ npm install
 ```bash
 # .env.local ya está configurado
 # Si necesitas cambiar la URL del API, edita:
-NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_URL=https://farmaciabackend-5843.onrender.com
 ```
 
 4. **Inicia el servidor de desarrollo**
@@ -190,7 +190,7 @@ El proyecto usa un sistema de colores profesional:
 ## 🚨 Troubleshooting
 
 ### "Cannot reach API"
-- Verifica que el backend está corriendo en `http://localhost:8000`
+- Verifica que el backend está corriendo en `https://farmaciabackend-5843.onrender.com`
 - Revisa `NEXT_PUBLIC_API_URL` en `.env.local`
 
 ### "Camera not working"

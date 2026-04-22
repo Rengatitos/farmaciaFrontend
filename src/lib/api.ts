@@ -9,9 +9,11 @@ import {
   DashboardResumen,
   Prediccion,
   ReporteAnalisis,
+  ScannerDetectResponse,
+  ScannerDetectProductResponse,
 } from '@/types'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://farmaciabackend-5843.onrender.com'
 
 class ApiClient {
   private client: AxiosInstance
@@ -179,6 +181,42 @@ class ApiClient {
     const response = await this.client.get<{ respuesta: string }>(
       '/reports/chatbot',
       { params: { pregunta } }
+    )
+    return response.data
+  }
+
+  // SCANNER ENDPOINTS
+  async detectBarcode(imageBlob: Blob, method: 'full' | 'fast' = 'full', crop = true) {
+    const formData = new FormData()
+    formData.append('image', imageBlob, 'barcode.jpg')
+
+    const response = await this.client.post<ScannerDetectResponse>('/api/scanner/detect', formData, {
+      params: { method, crop },
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+    return response.data
+  }
+
+  async detectBarcodeAndLookupProduct(
+    imageBlob: Blob,
+    method: 'full' | 'fast' = 'full',
+    crop = true,
+    includeInactive = false
+  ) {
+    const formData = new FormData()
+    formData.append('image', imageBlob, 'barcode.jpg')
+
+    const response = await this.client.post<ScannerDetectProductResponse>(
+      '/api/scanner/detect-product',
+      formData,
+      {
+        params: { method, crop, include_inactive: includeInactive },
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
     )
     return response.data
   }
