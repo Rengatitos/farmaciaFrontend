@@ -99,6 +99,57 @@ class ApiClient {
     return response.data
   }
 
+  async leerBarcodeSolo(imageBlob: Blob, method: 'full' | 'fast' = 'full', crop = true) {
+    const formData = new FormData()
+    formData.append('archivo', imageBlob, 'barcode.jpg')
+
+    const response = await this.client.post('/productos/leer-barcode-solo', formData, {
+      params: { method, crop },
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+    return response.data
+  }
+
+  async leerBarcodeInformacion(imageBlob: Blob, method: 'full' | 'fast' = 'full', crop = true) {
+    const formData = new FormData()
+    formData.append('archivo', imageBlob, 'barcode.jpg')
+
+    const response = await this.client.post('/productos/leer-barcode-informacion', formData, {
+      params: { method, crop },
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+    return response.data
+  }
+
+  async leerMultiplesBarcodes(imageBlob: Blob, method: 'full' | 'fast' = 'full', crop = true) {
+    const formData = new FormData()
+    formData.append('archivo', imageBlob, 'barcode.jpg')
+
+    const response = await this.client.post('/productos/leer-multiples-barcodes', formData, {
+      params: { method, crop },
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+    return response.data
+  }
+
+  async buscarInfoFarmaco(nombreFarmaco: string) {
+    const response = await this.client.post('/scraping/sync/' + encodeURIComponent(nombreFarmaco))
+    return response.data
+  }
+
+  async guardarInfoFarmaco(nombreFarmaco: string, productoId: number) {
+    const response = await this.client.post('/scraping/guardar-informacion', null, {
+      params: { nombre_farmaco: nombreFarmaco, producto_id: productoId },
+    })
+    return response.data
+  }
+
   // VENTAS ENDPOINTS
   async createVenta(venta: CrearVentaRequest) {
     const response = await this.client.post<Venta>('/ventas/boleta', venta)
@@ -149,30 +200,38 @@ class ApiClient {
   }
 
   // REPORTES ENDPOINTS
-  async getReporteMonthly() {
-    const response = await this.client.get<ReporteAnalisis>('/reports/monthly')
+  async getReporteMonthly(mes?: number, anio?: number) {
+    const response = await this.client.get<ReporteAnalisis>('/reports/monthly', {
+      params: { mes, anio },
+    })
     return response.data
   }
 
-  async sendReporteMonthlyEmail() {
-    const response = await this.client.post('/reports/monthly/send-email')
+  async sendReporteMonthlyEmail(mes?: number, anio?: number, emailDestino?: string) {
+    const response = await this.client.post('/reports/monthly/send-email', null, {
+      params: { mes, anio, email_destino: emailDestino },
+    })
     return response.data
   }
 
-  async getAnalisisVentas() {
-    const response = await this.client.get<string>('/reports/analisis-ventas')
+  async getAnalisisVentas(mes?: number, anio?: number) {
+    const response = await this.client.get<string>('/reports/analisis-ventas', {
+      params: { mes, anio },
+    })
     return response.data
   }
 
-  async downloadComprasCSV() {
+  async downloadComprasCSV(mes?: number, anio?: number) {
     const response = await this.client.get('/reports/descargar/compras', {
+      params: { mes, anio },
       responseType: 'blob',
     })
     return response.data
   }
 
-  async downloadVentasCSV() {
+  async downloadVentasCSV(mes?: number, anio?: number) {
     const response = await this.client.get('/reports/descargar/ventas', {
+      params: { mes, anio },
       responseType: 'blob',
     })
     return response.data

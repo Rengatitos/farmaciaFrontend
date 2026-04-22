@@ -9,7 +9,7 @@ import Navbar from '@/components/Navbar'
 import type { Producto } from '@/types'
 import { Search, Scan, ShoppingCart, X, Plus, Minus, AlertCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, preprocessBarcodeFrameToBlob } from '@/lib/utils'
 
 function ProductosPageContent() {
   const router = useRouter()
@@ -293,14 +293,6 @@ function ProductosPageContent() {
 
     try {
       const video = videoRef.current
-      const canvas = canvasRef.current
-      const context = canvas.getContext('2d')
-      
-      if (!context) {
-        console.error('✗ No se puede obtener contexto 2D')
-        toast.error('Error: sin contexto de canvas')
-        return
-      }
 
       console.log('📸 Capturando barcode...', {
         videoReady: video.readyState,
@@ -319,57 +311,42 @@ function ProductosPageContent() {
         return
       }
 
-      // Configurar canvas con las dimensiones del video
-      canvas.width = video.videoWidth
-      canvas.height = video.videoHeight
+      const blob = await preprocessBarcodeFrameToBlob(video, {
+        maxWidth: 960,
+        marginRatio: 0.16,
+        densityThreshold: 0.09,
+        minComponentArea: 10,
+      })
 
-      // Dibujar video en canvas
-      try {
-        context.drawImage(video, 0, 0)
-        console.log(`✓ Frame capturado: ${canvas.width}x${canvas.height}`)
-      } catch (drawError) {
-        console.error('✗ Error al dibujar video en canvas:', drawError)
-        toast.error('Error al capturar frame del video')
+      if (!blob) {
+        toast.error('No se pudo preparar la imagen del código')
         return
       }
 
-      // Convertir canvas a blob y enviar al servidor
-      canvas.toBlob(
-        async (blob) => {
-          if (!blob) {
-            console.error('✗ No se pudo generar blob de imagen')
-            toast.error('Error al generar imagen')
-            return
+      console.log(`✓ Imagen preprocesada: ${blob.size} bytes, type: ${blob.type}`)
+
+      try {
+        console.log('📤 Enviando imagen al servidor...')
+        const data = await apiClient.detectBarcodeAndLookupProduct(blob, 'full', true, false)
+        console.log('✓ Respuesta del servidor:', data)
+
+        if (data.barcode) {
+          toast.success(`✓ Código detectado: ${data.barcode}`)
+          const product = data.product ?? products.find((p) => p.codigo_barras === data.barcode)
+          if (product) {
+            setSelectedQuantity({ [product.id]: 1 })
+            toast.success(`Producto: ${product.nombre}`)
+          } else {
+            toast.error('Producto no encontrado')
           }
-
-          console.log(`✓ Blob generado: ${blob.size} bytes, type: ${blob.type}`)
-
-          try {
-            console.log('📤 Enviando imagen al servidor...')
-            const data = await apiClient.detectBarcodeAndLookupProduct(blob, 'full', true, false)
-            console.log('✓ Respuesta del servidor:', data)
-
-            if (data.barcode) {
-              toast.success(`✓ Código detectado: ${data.barcode}`)
-              const product = data.product ?? products.find((p) => p.codigo_barras === data.barcode)
-              if (product) {
-                setSelectedQuantity({ [product.id]: 1 })
-                toast.success(`Producto: ${product.nombre}`)
-              } else {
-                toast.error('Producto no encontrado')
-              }
-              stopScanner()
-            } else {
-              toast.error(data.message || 'No se detectó código de barras')
-            }
-          } catch (error) {
-            console.error('✗ Error HTTP:', error)
-            toast.error('Error al conectar con el servidor. ¿Está ejecutándose?')
-          }
-        },
-        'image/jpeg',
-        0.9
-      )
+          stopScanner()
+        } else {
+          toast.error(data.message || 'No se detectó código de barras')
+        }
+      } catch (error) {
+        console.error('✗ Error HTTP:', error)
+        toast.error('Error al conectar con el servidor. ¿Está ejecutándose?')
+      }
     } catch (error) {
       console.error('✗ Error general al capturar:', error)
       toast.error('Error al capturar barcode')

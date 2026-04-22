@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/authStore'
 import { apiClient } from '@/lib/api'
@@ -35,7 +35,11 @@ export default function ReportesPage() {
   const router = useRouter()
   const { user } = useAuthStore()
   const [loading, setLoading] = useState(true)
+  const [reportLoading, setReportLoading] = useState(false)
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1)
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
   const [report, setReport] = useState<ReporteAnalisis | null>(null)
+  const [ventasAnalysis, setVentasAnalysis] = useState('')
   const [chatMessage, setChatMessage] = useState('')
   const [chatMessages, setChatMessages] = useState<
     { role: 'user' | 'assistant'; message: string }[]
@@ -43,32 +47,69 @@ export default function ReportesPage() {
   const [chatLoading, setChatLoading] = useState(false)
   const [sendingEmail, setSendingEmail] = useState(false)
 
+  const loadReport = useCallback(async (mes = selectedMonth, anio = selectedYear) => {
+    try {
+      setReportLoading(true)
+      const [monthly, analisis] = await Promise.all([
+        apiClient.getReporteMonthly(mes, anio),
+        apiClient.getAnalisisVentas(mes, anio).catch(() => ''),
+      ])
+
+      setReport(monthly)
+      if (analisis) setVentasAnalysis(analisis)
+    } catch (error) {
+      toast.error('No se pudo cargar el reporte mensual')
+      console.error(error)
+
+      try {
+        const analisisFallback = await apiClient.getAnalisisVentas(mes, anio)
+        setVentasAnalysis(analisisFallback)
+        setReport({
+          periodo: `${String(mes).padStart(2, '0')}/${anio}`,
+          total_ventas: 0,
+          total_ingreso: 0,
+          productos_vendidos: 0,
+          producto_mas_vendido: 'Sin datos',
+          metodo_pago_favorito: 'N/A',
+          analisis_ia: analisisFallback,
+          recomendaciones: 'Revisa el análisis de ventas para más contexto.',
+        })
+      } catch (fallbackError) {
+        console.error(fallbackError)
+      }
+    } finally {
+      setReportLoading(false)
+      setLoading(false)
+    }
+  }, [selectedMonth, selectedYear])
+
   useEffect(() => {
     if (!user) {
       router.push('/login')
       return
     }
+    loadReport()
+  }, [user, router, loadReport])
 
-    const fetchReport = async () => {
-      try {
-        setLoading(true)
-        const data = await apiClient.getReporteMonthly()
-        setReport(data)
-      } catch (error) {
-        toast.error('Error al cargar el reporte')
-        console.error(error)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchReport()
-  }, [user, router])
+  const monthOptions = useMemo(() => [
+    { value: 1, label: 'Enero' },
+    { value: 2, label: 'Febrero' },
+    { value: 3, label: 'Marzo' },
+    { value: 4, label: 'Abril' },
+    { value: 5, label: 'Mayo' },
+    { value: 6, label: 'Junio' },
+    { value: 7, label: 'Julio' },
+    { value: 8, label: 'Agosto' },
+    { value: 9, label: 'Septiembre' },
+    { value: 10, label: 'Octubre' },
+    { value: 11, label: 'Noviembre' },
+    { value: 12, label: 'Diciembre' },
+  ], [])
 
   const handleSendEmail = async () => {
     try {
       setSendingEmail(true)
-      await apiClient.sendReporteMonthlyEmail()
+      await apiClient.sendReporteMonthlyEmail(selectedMonth, selectedYear)
       toast.success('✉️ Reporte enviado por correo exitosamente')
     } catch (error) {
       toast.error('Error al enviar el reporte por correo')
@@ -107,8 +148,8 @@ export default function ReportesPage() {
     try {
       const csv =
         type === 'compras'
-          ? await apiClient.downloadComprasCSV()
-          : await apiClient.downloadVentasCSV()
+          ? await apiClient.downloadComprasCSV(selectedMonth, selectedYear)
+          : await apiClient.downloadVentasCSV(selectedMonth, selectedYear)
       const url = window.URL.createObjectURL(csv)
       const link = document.createElement('a')
       link.href = url
@@ -120,6 +161,10 @@ export default function ReportesPage() {
     } catch (error) {
       toast.error('Error al descargar archivo')
     }
+  }
+
+  const handleGenerateReport = async () => {
+    await loadReport(selectedMonth, selectedYear)
   }
 
   if (loading) {
@@ -154,18 +199,55 @@ export default function ReportesPage() {
             {/* Reporte Mensual */}
             {report && (
               <div className="card p-8">
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-2xl font-bold text-gray-900">
-                    📊 Reporte del Mes
-                  </h2>
-                  <button
-                    onClick={handleSendEmail}
-                    disabled={sendingEmail}
-                    className="btn btn-primary flex items-center gap-2"
-                  >
-                    <Send size={18} />
-                    {sendingEmail ? 'Enviando...' : 'Enviar por Email'}
-                  </button>
+                <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between mb-6">
+                  <div>
+                    <h2 className="text-2xl font-bold text-gray-900">
+                      📊 Reporte del Mes
+                    </h2>
+                    <p className="text-sm text-gray-500 mt-1">
+                      Genera reportes por período y revisa el análisis de ventas con fallback automático.
+                    </p>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Mes</label>
+                      <select
+                        value={selectedMonth}
+                        onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+                        className="input min-w-[140px]"
+                      >
+                        {monthOptions.map((month) => (
+                          <option key={month.value} value={month.value}>{month.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Año</label>
+                      <input
+                        type="number"
+                        min={2020}
+                        value={selectedYear}
+                        onChange={(e) => setSelectedYear(parseInt(e.target.value) || new Date().getFullYear())}
+                        className="input min-w-[120px]"
+                      />
+                    </div>
+                    <button
+                      onClick={handleGenerateReport}
+                      disabled={reportLoading}
+                      className="btn btn-secondary flex items-center gap-2"
+                    >
+                      <FileText size={18} />
+                      {reportLoading ? 'Cargando...' : 'Generar'}
+                    </button>
+                    <button
+                      onClick={handleSendEmail}
+                      disabled={sendingEmail}
+                      className="btn btn-primary flex items-center gap-2"
+                    >
+                      <Send size={18} />
+                      {sendingEmail ? 'Enviando...' : 'Enviar por Email'}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 pb-8 border-b border-gray-200">
@@ -232,6 +314,20 @@ export default function ReportesPage() {
                   <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg text-gray-700 leading-relaxed">
                     {report.recomendaciones}
                   </div>
+                </div>
+              </div>
+            )}
+
+            {ventasAnalysis && (
+              <div className="card p-6">
+                <h3 className="text-lg font-bold text-gray-900 mb-4">
+                  🔎 Análisis de Ventas
+                </h3>
+                <p className="text-sm text-gray-500 mb-3">
+                  Lectura rápida para cuando el reporte mensual necesita fallback.
+                </p>
+                <div className="bg-gray-50 p-4 rounded-lg text-gray-700 leading-relaxed whitespace-pre-line">
+                  {ventasAnalysis}
                 </div>
               </div>
             )}
