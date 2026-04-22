@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/authStore'
 import { apiClient } from '@/lib/api'
@@ -62,14 +62,9 @@ export default function AdminProductosPage() {
     }
     loadProductos()
     loadCategorias()
-  }, [user])
+  }, [user, router])
 
-  useEffect(() => {
-    if (!showScanner) return
-    listCameraDevices()
-  }, [showScanner])
-
-  const listCameraDevices = async () => {
+  const listCameraDevices = useCallback(async () => {
     if (!navigator.mediaDevices?.enumerateDevices) return
 
     try {
@@ -84,7 +79,12 @@ export default function AdminProductosPage() {
     } catch (error) {
       console.error('No se pudieron listar cámaras', error)
     }
-  }
+  }, [selectedCameraId])
+
+  useEffect(() => {
+    if (!showScanner) return
+    listCameraDevices()
+  }, [showScanner, listCameraDevices])
 
   const getVideoConstraints = () => {
     if (!isMobileDevice && selectedCameraId) {

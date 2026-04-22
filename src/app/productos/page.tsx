@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/authStore'
 import { useCarritoStore } from '@/stores/carritoStore'
@@ -75,12 +75,7 @@ function ProductosPageContent() {
     setFilteredProducts(filtered)
   }, [searchQuery, products])
 
-  useEffect(() => {
-    if (!showScanner) return
-    listCameraDevices()
-  }, [showScanner])
-
-  const listCameraDevices = async () => {
+  const listCameraDevices = useCallback(async () => {
     if (!navigator.mediaDevices?.enumerateDevices) return
 
     try {
@@ -95,7 +90,12 @@ function ProductosPageContent() {
     } catch (error) {
       console.error('No se pudieron listar cámaras', error)
     }
-  }
+  }, [selectedCameraId])
+
+  useEffect(() => {
+    if (!showScanner) return
+    listCameraDevices()
+  }, [showScanner, listCameraDevices])
 
   const getVideoConstraints = () => {
     if (!isMobileDevice && selectedCameraId) {
