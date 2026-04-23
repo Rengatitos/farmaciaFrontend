@@ -45,6 +45,7 @@ function ProductosPageContent() {
   const [isDrawingCrop, setIsDrawingCrop] = useState(false)
   const [cropStartPoint, setCropStartPoint] = useState<{ x: number; y: number } | null>(null)
   const [processingCrop, setProcessingCrop] = useState(false)
+  const [capturedFrameDataUrl, setCapturedFrameDataUrl] = useState<string | null>(null)
   const isMobileDevice = typeof navigator !== 'undefined' ? /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) : false
   const safeCameraAspectRatio = Number.isFinite(cameraAspectRatio) && cameraAspectRatio > 0 ? cameraAspectRatio : 16 / 9
   const scannerViewportWidth = `min(100%, ${(safeCameraAspectRatio * 70).toFixed(2)}vh)`
@@ -122,6 +123,23 @@ function ProductosPageContent() {
     })
   }, [manualCropMode, manualCropRect])
 
+  useEffect(() => {
+    if (!manualCropMode || !capturedFrameDataUrl || !manualCanvasRef.current) return
+
+    const img = new Image()
+    img.onload = () => {
+      if (!manualCanvasRef.current) return
+      const canvas = manualCanvasRef.current
+      const context = canvas.getContext('2d', { willReadFrequently: true })
+      if (!context) return
+
+      canvas.width = img.width
+      canvas.height = img.height
+      context.drawImage(img, 0, 0)
+    }
+    img.src = capturedFrameDataUrl
+  }, [manualCropMode, capturedFrameDataUrl])
+
   const getVideoConstraints = () => {
     if (!isMobileDevice && selectedCameraId) {
       return {
@@ -155,6 +173,7 @@ function ProductosPageContent() {
     setIsDrawingCrop(false)
     setCropStartPoint(null)
     setProcessingCrop(false)
+    setCapturedFrameDataUrl(null)
   }
 
   // Camera Scanner
@@ -360,17 +379,10 @@ function ProductosPageContent() {
   }
 
   const captureForManualCrop = async () => {
-    if (!videoRef.current || !manualCanvasRef.current) return
+    if (!videoRef.current) return
 
     try {
       const video = videoRef.current
-      const manualCanvas = manualCanvasRef.current
-      const manualContext = manualCanvas.getContext('2d', { willReadFrequently: true })
-
-      if (!manualContext) {
-        toast.error('No se pudo preparar el área de recorte')
-        return
-      }
 
       console.log('📸 Capturando barcode...', {
         videoReady: video.readyState,
@@ -389,9 +401,18 @@ function ProductosPageContent() {
         return
       }
 
-      manualCanvas.width = video.videoWidth
-      manualCanvas.height = video.videoHeight
-      manualContext.drawImage(video, 0, 0)
+      const tempCanvas = document.createElement('canvas')
+      tempCanvas.width = video.videoWidth
+      tempCanvas.height = video.videoHeight
+      const tempContext = tempCanvas.getContext('2d', { willReadFrequently: true })
+
+      if (!tempContext) {
+        toast.error('No se pudo preparar el área de recorte')
+        return
+      }
+
+      tempContext.drawImage(video, 0, 0)
+      setCapturedFrameDataUrl(tempCanvas.toDataURL('image/png'))
 
       setManualCropMode(true)
       setManualCropRect(null)

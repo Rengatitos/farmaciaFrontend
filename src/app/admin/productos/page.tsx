@@ -8,7 +8,6 @@ import Navbar from '@/components/Navbar'
 import type { Producto, Categoria } from '@/types'
 import { Plus, Trash2, Edit2, X, Scan } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { preprocessBarcodeImageDataToBlob } from '@/lib/utils'
 
 type CropRect = {
   x: number
@@ -43,10 +42,30 @@ export default function AdminProductosPage() {
   const [isDrawingCrop, setIsDrawingCrop] = useState(false)
   const [cropStartPoint, setCropStartPoint] = useState<{ x: number; y: number } | null>(null)
   const [processingCrop, setProcessingCrop] = useState(false)
+  const [sendingImprovedImage, setSendingImprovedImage] = useState(false)
+  const [capturedFrameDataUrl, setCapturedFrameDataUrl] = useState<string | null>(null)
+  const [improvedPreviewUrl, setImprovedPreviewUrl] = useState<string | null>(null)
+  const [pendingEnhancedBlob, setPendingEnhancedBlob] = useState<Blob | null>(null)
   const isMobileDevice = typeof navigator !== 'undefined' ? /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) : false
   const safeCameraAspectRatio = Number.isFinite(cameraAspectRatio) && cameraAspectRatio > 0 ? cameraAspectRatio : 16 / 9
   const scannerViewportWidth = `min(100%, ${(safeCameraAspectRatio * 70).toFixed(2)}vh)`
   const cameraPreviewWidth = safeCameraAspectRatio >= 1 ? 'clamp(90px, 22vw, 180px)' : 'clamp(80px, 18vw, 130px)'
+
+  const clearImprovedImageMemory = useCallback(() => {
+    setPendingEnhancedBlob(null)
+    setImprovedPreviewUrl((previousUrl) => {
+      if (previousUrl) {
+        URL.revokeObjectURL(previousUrl)
+      }
+      return null
+    })
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      clearImprovedImageMemory()
+    }
+  }, [clearImprovedImageMemory])
 
   // Modal de producto
   const [showProductModal, setShowProductModal] = useState(false)
@@ -112,6 +131,23 @@ export default function AdminProductosPage() {
     })
   }, [manualCropMode, manualCropRect])
 
+  useEffect(() => {
+    if (!manualCropMode || !capturedFrameDataUrl || !manualCanvasRef.current) return
+
+    const image = new Image()
+    image.onload = () => {
+      if (!manualCanvasRef.current) return
+      const canvas = manualCanvasRef.current
+      const context = canvas.getContext('2d', { willReadFrequently: true })
+      if (!context) return
+
+      canvas.width = image.width
+      canvas.height = image.height
+      context.drawImage(image, 0, 0)
+    }
+    image.src = capturedFrameDataUrl
+  }, [manualCropMode, capturedFrameDataUrl])
+
   const getVideoConstraints = () => {
     if (!isMobileDevice && selectedCameraId) {
       return {
@@ -145,6 +181,60 @@ export default function AdminProductosPage() {
     setIsDrawingCrop(false)
     setCropStartPoint(null)
     setProcessingCrop(false)
+    setSendingImprovedImage(false)
+    setCapturedFrameDataUrl(null)
+    clearImprovedImageMemory()
+  }
+
+  const clampChannel = (value: number): number => {
+    if (value < 0) return 0
+    if (value > 255) return 255
+    return value
+  }
+
+  const buildEnhancedColorBlob = async (croppedImageData: ImageData): Promise<Blob | null> => {
+    const outputCanvas = document.createElement('canvas')
+    outputCanvas.width = croppedImageData.width
+    outputCanvas.height = croppedImageData.height
+
+    const outputContext = outputCanvas.getContext('2d', { willReadFrequently: true })
+    if (!outputContext) return null
+
+    const enhancedData = outputContext.createImageData(croppedImageData.width, croppedImageData.height)
+    const source = croppedImageData.data
+    const target = enhancedData.data
+
+    const contrast = 1.18
+    const saturation = 1.12
+    const brightness = 4
+
+    for (let i = 0; i < source.length; i += 4) {
+      const r = source[i]
+      const g = source[i + 1]
+      const b = source[i + 2]
+
+      const mean = (r + g + b) / 3
+      const sr = mean + (r - mean) * saturation
+      const sg = mean + (g - mean) * saturation
+      const sb = mean + (b - mean) * saturation
+
+      target[i] = clampChannel((sr - 128) * contrast + 128 + brightness)
+      target[i + 1] = clampChannel((sg - 128) * contrast + 128 + brightness)
+      target[i + 2] = clampChannel((sb - 128) * contrast + 128 + brightness)
+      target[i + 3] = source[i + 3]
+    }
+
+    outputContext.putImageData(enhancedData, 0, 0)
+
+    const toBlob = (mimeType: 'image/webp' | 'image/png', quality?: number) =>
+      new Promise<Blob | null>((resolve) => {
+        outputCanvas.toBlob((blob) => resolve(blob), mimeType, quality)
+      })
+
+    const webpBlob = await toBlob('image/webp', 0.92)
+    if (webpBlob) return webpBlob
+
+    return await toBlob('image/png')
   }
 
   // Scanner de código de barras
@@ -349,26 +439,28 @@ export default function AdminProductosPage() {
   }
 
   const captureForManualCrop = async () => {
-    if (!videoRef.current || !manualCanvasRef.current) return
+    if (!videoRef.current) return
 
     try {
       const video = videoRef.current
-      const manualCanvas = manualCanvasRef.current
-      const manualContext = manualCanvas.getContext('2d', { willReadFrequently: true })
-
-      if (!manualContext) {
-        toast.error('No se pudo preparar el área de recorte')
-        return
-      }
 
       if (video.readyState !== video.HAVE_ENOUGH_DATA || video.videoWidth === 0 || video.videoHeight === 0) {
         toast.error('Espera a que el video se cargue completamente')
         return
       }
 
-      manualCanvas.width = video.videoWidth
-      manualCanvas.height = video.videoHeight
-      manualContext.drawImage(video, 0, 0)
+      const tempCanvas = document.createElement('canvas')
+      tempCanvas.width = video.videoWidth
+      tempCanvas.height = video.videoHeight
+      const tempContext = tempCanvas.getContext('2d', { willReadFrequently: true })
+
+      if (!tempContext) {
+        toast.error('No se pudo preparar el área de recorte')
+        return
+      }
+
+      tempContext.drawImage(video, 0, 0)
+      setCapturedFrameDataUrl(tempCanvas.toDataURL('image/png'))
 
       setManualCropMode(true)
       setManualCropRect(null)
@@ -410,17 +502,28 @@ export default function AdminProductosPage() {
       const cropHeight = Math.max(1, Math.floor(manualCropRect.height * scaleY))
 
       const imageData = manualContext.getImageData(cropX, cropY, cropWidth, cropHeight)
-      const blob = await preprocessBarcodeImageDataToBlob(imageData, {
-        autoDetectRegion: true,
-        marginRatio: 0.06,
-        densityThreshold: 0.08,
-        minComponentArea: 8,
-      })
+      const blob = await buildEnhancedColorBlob(imageData)
 
       if (!blob) {
         toast.error('No se pudo mejorar la imagen del código')
         return
       }
+
+      setPendingEnhancedBlob(blob)
+
+      setImprovedPreviewUrl((previousUrl) => {
+        if (previousUrl) {
+          URL.revokeObjectURL(previousUrl)
+        }
+        return URL.createObjectURL(blob)
+      })
+
+      toast.success('Imagen mejorada lista, enviando al backend...')
+      setProcessingCrop(false)
+      setSendingImprovedImage(true)
+
+      // Permite que el preview se renderice antes de enviar al backend.
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(null)))
 
       const data = await apiClient.detectBarcode(blob, 'full', true)
       if (data.barcode) {
@@ -435,6 +538,8 @@ export default function AdminProductosPage() {
       toast.error('Error al procesar imagen recortada')
     } finally {
       setProcessingCrop(false)
+      setSendingImprovedImage(false)
+      clearImprovedImageMemory()
     }
   }
 
@@ -1057,6 +1162,22 @@ export default function AdminProductosPage() {
                 </p>
               </div>
 
+              {manualCropMode && improvedPreviewUrl && (
+                <div className="mb-4 border border-emerald-200 bg-emerald-50 rounded-lg p-3">
+                  <p className="text-sm font-semibold text-emerald-800 mb-2">
+                    Preview de imagen mejorada (temporal en memoria)
+                  </p>
+                  <img
+                    src={improvedPreviewUrl}
+                    alt="Recorte mejorado"
+                    className="w-full max-h-44 object-contain rounded bg-black/80"
+                  />
+                  <p className="text-xs text-emerald-700 mt-2">
+                    Formato: {pendingEnhancedBlob?.type || 'image/png'}
+                  </p>
+                </div>
+              )}
+
               {/* Botones */}
               <div className="flex gap-3">
                 {!manualCropMode ? (
@@ -1071,14 +1192,14 @@ export default function AdminProductosPage() {
                   <>
                     <button
                       onClick={processManualCropBarcode}
-                      disabled={processingCrop}
+                      disabled={processingCrop || sendingImprovedImage}
                       className="btn btn-primary flex-1 flex items-center justify-center gap-2 disabled:opacity-60"
                     >
                       <Scan size={20} />
-                      {processingCrop ? 'Procesando...' : 'Mejorar y Escanear'}
+                      {processingCrop ? 'Mejorando...' : sendingImprovedImage ? 'Enviando...' : 'Mejorar y Escanear'}
                     </button>
                     <button
-                      onClick={() => setManualCropMode(false)}
+                      onClick={resetManualCrop}
                       className="btn btn-secondary flex-1"
                     >
                       Volver a Cámara
