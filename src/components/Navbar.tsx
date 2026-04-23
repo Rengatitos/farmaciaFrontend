@@ -12,8 +12,8 @@ import {
   Home,
   Package,
   TrendingUp,
-  FileText,
   Settings,
+  Pill,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -34,13 +34,15 @@ export default function Navbar() {
   }
 
   const cartCount = getCount()
+  const normalizedRole = user?.rol?.toLowerCase() || ''
+  const isAdmin = normalizedRole === 'admin' || normalizedRole === 'administrador'
 
   const navItems = [
     { href: '/dashboard', label: 'Dashboard', icon: Home },
     { href: '/productos', label: 'Productos', icon: Package },
     { href: '/ventas', label: 'Ventas', icon: TrendingUp },
-    { href: '/reportes', label: 'Reportes', icon: FileText },
-    { href: '/admin/productos', label: 'Administración', icon: Settings },
+    { href: '/consultas/farmacos', label: 'Consultas', icon: Pill },
+    ...(isAdmin ? [{ href: '/admin/productos', label: 'Administración', icon: Settings }] : []),
   ]
 
   return (

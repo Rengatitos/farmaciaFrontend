@@ -12,6 +12,10 @@ import {
   ReporteAnalisis,
   ScannerDetectResponse,
   ScannerDetectProductResponse,
+  InfoFarmaco,
+  GuardarInfoFarmacoResponse,
+  AdminRegisterUserRequest,
+  AdminUsersResponse,
 } from '@/types'
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://farmaciabackend-5843.onrender.com'
@@ -63,6 +67,16 @@ class ApiClient {
 
   async getMe() {
     const response = await this.client.get<User>('/auth/me')
+    return response.data
+  }
+
+  async getUsuariosAdmin() {
+    const response = await this.client.get<AdminUsersResponse>('/auth/usuarios')
+    return response.data
+  }
+
+  async registerUsuarioAdmin(payload: AdminRegisterUserRequest) {
+    const response = await this.client.post('/auth/admin/register', payload)
     return response.data
   }
 
@@ -139,12 +153,12 @@ class ApiClient {
   }
 
   async buscarInfoFarmaco(nombreFarmaco: string) {
-    const response = await this.client.post('/scraping/sync/' + encodeURIComponent(nombreFarmaco))
+    const response = await this.client.post<InfoFarmaco>('/scraping/sync/' + encodeURIComponent(nombreFarmaco))
     return response.data
   }
 
   async guardarInfoFarmaco(nombreFarmaco: string, productoId: number) {
-    const response = await this.client.post('/scraping/guardar-informacion', null, {
+    const response = await this.client.post<GuardarInfoFarmacoResponse>('/scraping/guardar-informacion', null, {
       params: { nombre_farmaco: nombreFarmaco, producto_id: productoId },
     })
     return response.data

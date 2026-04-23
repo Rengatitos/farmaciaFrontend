@@ -15,6 +15,27 @@ export interface AuthResponse {
   user: User
 }
 
+export interface AdminRegisterUserRequest {
+  nombre: string
+  email: string
+  password: string
+  rol: 'admin' | 'vendedor'
+}
+
+export interface AdminUser {
+  id: string
+  nombre: string
+  email: string
+  rol: 'admin' | 'vendedor'
+  estado: boolean
+  fecha_creacion: string
+}
+
+export interface AdminUsersResponse {
+  total: number
+  usuarios: AdminUser[]
+}
+
 // Productos
 export interface Producto {
   id: number
@@ -59,6 +80,21 @@ export interface ScannerDetectResponse {
 
 export interface ScannerDetectProductResponse extends ScannerDetectResponse {
   product?: Producto | null
+}
+
+// Scraping / Información farmacológica
+export interface InfoFarmaco {
+  nombre: string
+  descripcion: string
+  categoria: string
+  presentacion?: string | null
+  fabricante?: string | null
+}
+
+export interface GuardarInfoFarmacoResponse {
+  mensaje: string
+  producto_id: number
+  informacion: InfoFarmaco
 }
 
 // Ventas

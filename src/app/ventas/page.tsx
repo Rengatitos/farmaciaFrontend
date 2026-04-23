@@ -114,7 +114,7 @@ export default function VentasPage() {
     }))
     .sort((a, b) => a.date.localeCompare(b.date))
 
-  const COLORS = ['#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6']
+  const COLORS = ['#0ea5e9', '#1059b9', '#f59e0b', '#ef4444', '#8b5cf6']
 
   if (loading) {
     return (

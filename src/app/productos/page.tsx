@@ -637,7 +637,7 @@ function ProductosPageContent() {
                         height: 'auto',
                         aspectRatio: safeCameraAspectRatio,
                         backgroundColor: '#000000',
-                        border: '2px solid #10b981',
+                        border: '2px solid #5f63e7',
                         borderRadius: '4px',
                         zIndex: 10,
                         display: 'block',
