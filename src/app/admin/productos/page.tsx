@@ -6,8 +6,9 @@ import { useAuthStore } from '@/stores/authStore'
 import { apiClient } from '@/lib/api'
 import Navbar from '@/components/Navbar'
 import type { Producto, Categoria } from '@/types'
-import { Plus, Trash2, Edit2, X, Scan } from 'lucide-react'
+import { Plus, Trash2, Edit2, X, Scan, RotateCcw } from 'lucide-react'
 import toast from 'react-hot-toast'
+import EditarProductoModal from './EditarProductoModal'
 
 type CropRect = {
   x: number
@@ -24,9 +25,11 @@ export default function AdminProductosPage() {
   const [activeTab, setActiveTab] = useState<'productos' | 'categorias'>('productos')
   const [productos, setProductos] = useState<Producto[]>([])
   const [categorias, setCategorias] = useState<Categoria[]>([])
+  const [productoAEditar, setProductoAEditar] = useState<Producto | null>(null)
   const [loading, setLoading] = useState(false)
 
   // Scanner para código de barras
+  
   const [showScanner, setShowScanner] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -555,6 +558,32 @@ export default function AdminProductosPage() {
       setLoading(false)
     }
   }
+  const handleDeleteProducto = async (id: number) => {
+    if (!confirm('¿Estás seguro de eliminar este producto?')) return
+    try {
+      setLoading(true)
+      await apiClient.deleteProducto(id) // Asegúrate de que exista en tu lib/api.ts
+      toast.success('Producto desactivado')
+      loadProductos()
+    } catch (error) {
+      toast.error('No se pudo eliminar el producto')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleRestoreProducto = async (id: number) => {
+    try {
+      setLoading(true)
+      await apiClient.restoreProducto(id)
+      toast.success('Producto restaurado')
+      loadProductos()
+    } catch (error) {
+      toast.error('No se pudo restaurar el producto')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const loadCategorias = async () => {
     try {
@@ -736,31 +765,68 @@ export default function AdminProductosPage() {
                   </thead>
                   <tbody className="divide-y divide-gray-200">
                     {productos.map((producto) => (
-                      <tr key={producto.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 text-sm text-gray-900 font-mono">{producto.codigo_barras}</td>
-                        <td className="px-6 py-4 text-sm text-gray-900">{producto.nombre}</td>
-                        <td className="px-6 py-4 text-sm text-gray-600">
+                      <tr
+                        key={producto.id}
+                        className={producto.activo ? 'hover:bg-gray-50' : 'bg-gray-100 text-gray-500'}
+                      >
+                        <td className={`px-6 py-4 text-sm font-mono ${producto.activo ? 'text-gray-900' : 'text-gray-500'}`}>
+                          {producto.codigo_barras}
+                        </td>
+                        <td className={`px-6 py-4 text-sm ${producto.activo ? 'text-gray-900' : 'text-gray-500'}`}>
+                          {producto.nombre}
+                        </td>
+                        <td className={`px-6 py-4 text-sm ${producto.activo ? 'text-gray-600' : 'text-gray-500'}`}>
                           {categorias.find((c) => c.id === producto.categoria_id)?.nombre || '-'}
                         </td>
-                        <td className="px-6 py-4 text-sm text-gray-900">S/. {producto.precio_venta.toFixed(2)}</td>
-                        <td className="px-6 py-4 text-sm">
-                          <span
-                            className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                              producto.stock_actual > producto.stock_minimo
-                                ? 'bg-green-100 text-green-800'
-                                : 'bg-red-100 text-red-800'
-                            }`}
-                          >
-                            {producto.stock_actual}
-                          </span>
+                        <td className={`px-6 py-4 text-sm ${producto.activo ? 'text-gray-900' : 'text-gray-500'}`}>
+                          S/. {producto.precio_venta.toFixed(2)}
                         </td>
                         <td className="px-6 py-4 text-sm">
-                          <button className="text-primary-600 hover:text-primary-700 mr-3">
-                            <Edit2 size={18} />
-                          </button>
-                          <button className="text-red-600 hover:text-red-700">
-                            <Trash2 size={18} />
-                          </button>
+                          {producto.activo ? (
+                            <span
+                              className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                                producto.stock_actual > producto.stock_minimo
+                                  ? 'bg-green-100 text-green-800'
+                                  : 'bg-red-100 text-red-800'
+                              }`}
+                            >
+                              {producto.stock_actual}
+                            </span>
+                          ) : (
+                            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-gray-200 text-gray-700">
+                              Inactivo
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-sm">
+                          {producto.activo ? (
+                            <>
+                              <button
+                                onClick={() => setProductoAEditar(producto)}
+                                className="text-primary-600 hover:text-primary-700 mr-3"
+                                title="Editar producto"
+                              >
+                                <Edit2 size={18} />
+                              </button>
+
+                              <button
+                                onClick={() => handleDeleteProducto(producto.id)}
+                                className="text-red-600 hover:text-red-700"
+                                title="Desactivar producto"
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              onClick={() => handleRestoreProducto(producto.id)}
+                              className="inline-flex items-center gap-2 text-emerald-700 hover:text-emerald-800 font-medium"
+                              title="Restaurar producto"
+                            >
+                              <RotateCcw size={16} />
+                              Restaurar
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -823,6 +889,19 @@ export default function AdminProductosPage() {
       </main>
 
       {/* Modal Producto */}
+
+      {/* MODALES - FUERA DEL MAIN */}
+      
+      {/* 1. Modal Editar Producto (Independiente) */}
+      {productoAEditar && (
+        <EditarProductoModal
+          producto={productoAEditar}
+          categorias={categorias}
+          onClose={() => setProductoAEditar(null)}
+          onSuccess={loadProductos}
+        />
+      )}
+
       {showProductModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto">

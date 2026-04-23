@@ -100,6 +100,26 @@ class ApiClient {
     return response.data
   }
 
+  ////put /productos/{producto_id} Actualizar Producto
+
+  async updateProducto(productoId: number, producto: Partial<ProductoCreateRequest>) {
+    const response = await this.client.put<Producto>(`/productos/${productoId}`, producto)
+    return response.data
+  }
+  ////delete /productos/{producto_id} Eliminar Producto (lógica de eliminación suave, solo cambia el estado a inactivo)
+  async deleteProducto(productoId: number) {
+    const response = await this.client.delete(`/productos/${productoId}`)
+    return response.data
+  }
+
+  async restoreProducto(productoId: number) {
+    const response = await this.client.post(`/productos/${productoId}/restaurar`)
+    return response.data
+  }
+
+  
+
+
   async getCategorias() {
     const response = await this.client.get<Categoria[]>('/productos/categorias')
     return response.data

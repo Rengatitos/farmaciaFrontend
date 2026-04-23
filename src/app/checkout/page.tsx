@@ -107,7 +107,7 @@ export default function CheckoutPage() {
     setVenta(null)
     setCustomerInfo({ nombre: '', documento: '' })
     setPaymentMethod('Efectivo')
-    router.push('/dashboard')
+    router.push('/productos')
   }
 
   // Venta completada
@@ -178,22 +178,33 @@ export default function CheckoutPage() {
                     </th>
                   </tr>
                 </thead>
-                <tbody>
-                  {venta.detalles.map((item: any, index: number) => (
-                    <tr key={index} className="border-b border-gray-200">
-                      <td className="py-2 text-gray-900">{item.producto_id}</td>
-                      <td className="py-2 text-center text-gray-900">
-                        {item.cantidad}
-                      </td>
-                      <td className="py-2 text-right text-gray-900">
-                        {formatCurrency(item.precio_unitario)}
-                      </td>
-                      <td className="py-2 text-right text-gray-900 font-semibold">
-                        {formatCurrency(item.subtotal)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
+                  <tbody>
+                    {venta?.detalles && venta.detalles.length > 0 ? (
+                      venta.detalles.map((item: any, index: number) => (
+                        <tr key={index} className="border-b border-gray-200">
+                          <td className="py-2 text-gray-900">
+                            {/* Mostramos el nombre si existe, si no, el ID */}
+                            {item.producto?.nombre || item.nombre_producto || `Producto ID: ${item.producto_id}`}
+                          </td>
+                          <td className="py-2 text-center text-gray-900">
+                            {item.cantidad}
+                          </td>
+                          <td className="py-2 text-right text-gray-900">
+                            {formatCurrency(item.precio_unitario)}
+                          </td>
+                          <td className="py-2 text-right text-gray-900 font-semibold">
+                            {formatCurrency(item.subtotal)}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={4} className="py-8 text-center text-gray-500 italic">
+                          No se encontraron detalles para esta venta.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
               </table>
             </div>
 

@@ -476,7 +476,10 @@ function ProductosPageContent() {
 
         if (data.barcode) {
           toast.success(`✓ Código detectado: ${data.barcode}`)
+          setSearchQuery(data.barcode);
           const product = data.product ?? products.find((p) => p.codigo_barras === data.barcode)
+
+
           if (product) {
             setSelectedQuantity({ [product.id]: 1 })
             toast.success(`Producto: ${product.nombre}`)
