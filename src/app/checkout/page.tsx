@@ -58,20 +58,33 @@ export default function CheckoutPage() {
     try {
       setLoading(true)
 
+      const detallesBoleta = items.map((item) => ({
+        producto_id: item.producto.id,
+        nombre_producto: item.producto.nombre,
+        cantidad: item.cantidad,
+        precio_unitario: item.producto.precio_venta,
+        subtotal: item.subtotal,
+      }))
+
       const ventaData = {
         metodo_pago: paymentMethod,
         documento_cliente: customerInfo.documento || undefined,
         nombre_cliente: customerInfo.nombre || undefined,
-        detalles: items.map((item) => ({
-          producto_id: item.producto.id,
+        detalles: detallesBoleta.map((item) => ({
+          producto_id: item.producto_id,
           cantidad: item.cantidad,
-          precio_unitario: item.producto.precio_venta,
+          precio_unitario: item.precio_unitario,
           subtotal: item.subtotal,
         })),
       }
 
       const response = await apiClient.createVenta(ventaData)
-      setVenta(response)
+      setVenta({
+        ...response,
+        nombre_cliente: response?.nombre_cliente || customerInfo.nombre || undefined,
+        documento_cliente: response?.documento_cliente || customerInfo.documento || undefined,
+        detalles: detallesBoleta,
+      })
       toast.success('¡Venta registrada exitosamente!')
     } catch (error: any) {
       const message =

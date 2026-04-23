@@ -67,6 +67,24 @@ export default function VentasPage() {
     setFilteredVentas(filtered)
   }, [filterMonth, ventas])
 
+  const handleViewVenta = async (venta: Venta) => {
+    try {
+      const ventaCompleta: any = await apiClient.getVenta(venta.id)
+      const cabecera = ventaCompleta?.venta || venta
+      const detalles = ventaCompleta?.detalles || venta.detalles || []
+
+      setSelectedVenta({
+        ...venta,
+        ...cabecera,
+        detalles,
+      })
+    } catch (error) {
+      // Si falla la consulta detallada, se muestra la data resumida ya cargada.
+      setSelectedVenta(venta)
+      toast.error('Mostrando detalle resumido de la venta')
+    }
+  }
+
   const downloadVentasCSV = async () => {
     try {
       const csv = await apiClient.downloadVentasCSV()
@@ -408,7 +426,7 @@ export default function VentasPage() {
                           </td>
                           <td className="py-3 px-6">
                             <button
-                              onClick={() => setSelectedVenta(venta)}
+                              onClick={() => handleViewVenta(venta)}
                               className="flex items-center gap-2 text-primary-600 hover:text-primary-700 font-medium"
                             >
                               <Eye size={18} />

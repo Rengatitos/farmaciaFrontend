@@ -60,7 +60,7 @@ function ProductosPageContent() {
     const fetchProducts = async () => {
       try {
         setLoading(true)
-        const data = await apiClient.getProductos(0, 100)
+        const data = await apiClient.getProductos(0, 100, true)
         setProducts(data)
         setFilteredProducts(data)
       } catch (error) {
