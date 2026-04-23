@@ -9,7 +9,14 @@ import Navbar from '@/components/Navbar'
 import type { Producto } from '@/types'
 import { Search, Scan, ShoppingCart, X, Plus, Minus, AlertCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { formatCurrency, preprocessBarcodeFrameToBlob } from '@/lib/utils'
+import { formatCurrency, preprocessBarcodeImageDataToBlob } from '@/lib/utils'
+
+type CropRect = {
+  x: number
+  y: number
+  width: number
+  height: number
+}
 
 function ProductosPageContent() {
   const router = useRouter()
@@ -26,11 +33,18 @@ function ProductosPageContent() {
   }>({})
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const manualCanvasRef = useRef<HTMLCanvasElement>(null)
   const scannerViewportRef = useRef<HTMLDivElement>(null)
+  const manualCropContainerRef = useRef<HTMLDivElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const [cameraAspectRatio, setCameraAspectRatio] = useState(16 / 9)
   const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([])
   const [selectedCameraId, setSelectedCameraId] = useState('')
+  const [manualCropMode, setManualCropMode] = useState(false)
+  const [manualCropRect, setManualCropRect] = useState<CropRect | null>(null)
+  const [isDrawingCrop, setIsDrawingCrop] = useState(false)
+  const [cropStartPoint, setCropStartPoint] = useState<{ x: number; y: number } | null>(null)
+  const [processingCrop, setProcessingCrop] = useState(false)
   const isMobileDevice = typeof navigator !== 'undefined' ? /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) : false
   const safeCameraAspectRatio = Number.isFinite(cameraAspectRatio) && cameraAspectRatio > 0 ? cameraAspectRatio : 16 / 9
   const scannerViewportWidth = `min(100%, ${(safeCameraAspectRatio * 70).toFixed(2)}vh)`
@@ -97,6 +111,17 @@ function ProductosPageContent() {
     listCameraDevices()
   }, [showScanner, listCameraDevices])
 
+  useEffect(() => {
+    if (!manualCropMode || manualCropRect || !manualCropContainerRef.current) return
+    const rect = manualCropContainerRef.current.getBoundingClientRect()
+    setManualCropRect({
+      x: rect.width * 0.2,
+      y: rect.height * 0.35,
+      width: rect.width * 0.6,
+      height: rect.height * 0.3,
+    })
+  }, [manualCropMode, manualCropRect])
+
   const getVideoConstraints = () => {
     if (!isMobileDevice && selectedCameraId) {
       return {
@@ -124,6 +149,14 @@ function ProductosPageContent() {
     }
   }
 
+  const resetManualCrop = () => {
+    setManualCropMode(false)
+    setManualCropRect(null)
+    setIsDrawingCrop(false)
+    setCropStartPoint(null)
+    setProcessingCrop(false)
+  }
+
   // Camera Scanner
   const startScanner = async () => {
     try {
@@ -144,6 +177,7 @@ function ProductosPageContent() {
       
       streamRef.current = stream
       setShowScanner(true)
+      resetManualCrop()
       
       // Pequeño delay para asegurar que el modal está renderizado
       setTimeout(() => {
@@ -284,15 +318,59 @@ function ProductosPageContent() {
     if (videoRef.current) {
       videoRef.current.srcObject = null
     }
+    resetManualCrop()
     setShowScanner(false)
     console.log('✓ Scanner detenido')
   }
 
-  const captureAndScan = async () => {
-    if (!videoRef.current || !canvasRef.current) return
+  const getPointerPosition = (clientX: number, clientY: number) => {
+    if (!manualCropContainerRef.current) return null
+    const rect = manualCropContainerRef.current.getBoundingClientRect()
+    return {
+      x: Math.max(0, Math.min(clientX - rect.left, rect.width)),
+      y: Math.max(0, Math.min(clientY - rect.top, rect.height)),
+    }
+  }
+
+  const beginCropSelection = (x: number, y: number) => {
+    const point = getPointerPosition(x, y)
+    if (!point) return
+    setCropStartPoint(point)
+    setManualCropRect({ x: point.x, y: point.y, width: 0, height: 0 })
+    setIsDrawingCrop(true)
+  }
+
+  const updateCropSelection = (x: number, y: number) => {
+    if (!isDrawingCrop || !cropStartPoint) return
+    const point = getPointerPosition(x, y)
+    if (!point) return
+
+    const rect: CropRect = {
+      x: Math.min(cropStartPoint.x, point.x),
+      y: Math.min(cropStartPoint.y, point.y),
+      width: Math.abs(point.x - cropStartPoint.x),
+      height: Math.abs(point.y - cropStartPoint.y),
+    }
+    setManualCropRect(rect)
+  }
+
+  const endCropSelection = () => {
+    setIsDrawingCrop(false)
+    setCropStartPoint(null)
+  }
+
+  const captureForManualCrop = async () => {
+    if (!videoRef.current || !manualCanvasRef.current) return
 
     try {
       const video = videoRef.current
+      const manualCanvas = manualCanvasRef.current
+      const manualContext = manualCanvas.getContext('2d', { willReadFrequently: true })
+
+      if (!manualContext) {
+        toast.error('No se pudo preparar el área de recorte')
+        return
+      }
 
       console.log('📸 Capturando barcode...', {
         videoReady: video.readyState,
@@ -311,19 +389,64 @@ function ProductosPageContent() {
         return
       }
 
-      const blob = await preprocessBarcodeFrameToBlob(video, {
-        maxWidth: 960,
-        marginRatio: 0.16,
-        densityThreshold: 0.09,
-        minComponentArea: 10,
-      })
+      manualCanvas.width = video.videoWidth
+      manualCanvas.height = video.videoHeight
+      manualContext.drawImage(video, 0, 0)
 
-      if (!blob) {
-        toast.error('No se pudo preparar la imagen del código')
+      setManualCropMode(true)
+      setManualCropRect(null)
+
+      toast.success('Dibuja el área del código y luego procesa la imagen')
+    } catch (error) {
+      console.error('✗ Error al congelar frame:', error)
+      toast.error('No se pudo congelar la imagen')
+    }
+  }
+
+  const processManualCropAndScan = async () => {
+    if (!manualCanvasRef.current || !manualCropContainerRef.current || !manualCropRect) {
+      toast.error('Selecciona un área para recortar')
+      return
+    }
+
+    if (manualCropRect.width < 20 || manualCropRect.height < 20) {
+      toast.error('El recorte es muy pequeño. Selecciona un área mayor.')
+      return
+    }
+
+    setProcessingCrop(true)
+
+    try {
+      const manualCanvas = manualCanvasRef.current
+      const manualContext = manualCanvas.getContext('2d', { willReadFrequently: true })
+      if (!manualContext) {
+        toast.error('No se pudo leer la imagen recortada')
         return
       }
 
-      console.log(`✓ Imagen preprocesada: ${blob.size} bytes, type: ${blob.type}`)
+      const containerRect = manualCropContainerRef.current.getBoundingClientRect()
+      const scaleX = manualCanvas.width / containerRect.width
+      const scaleY = manualCanvas.height / containerRect.height
+
+      const cropX = Math.max(0, Math.floor(manualCropRect.x * scaleX))
+      const cropY = Math.max(0, Math.floor(manualCropRect.y * scaleY))
+      const cropWidth = Math.max(1, Math.floor(manualCropRect.width * scaleX))
+      const cropHeight = Math.max(1, Math.floor(manualCropRect.height * scaleY))
+
+      const imageData = manualContext.getImageData(cropX, cropY, cropWidth, cropHeight)
+      const blob = await preprocessBarcodeImageDataToBlob(imageData, {
+        autoDetectRegion: true,
+        marginRatio: 0.06,
+        densityThreshold: 0.08,
+        minComponentArea: 8,
+      })
+
+      if (!blob) {
+        toast.error('No se pudo mejorar la imagen del código')
+        return
+      }
+
+      console.log(`✓ Imagen recortada y mejorada: ${blob.size} bytes, type: ${blob.type}`)
 
       try {
         console.log('📤 Enviando imagen al servidor...')
@@ -348,8 +471,10 @@ function ProductosPageContent() {
         toast.error('Error al conectar con el servidor. ¿Está ejecutándose?')
       }
     } catch (error) {
-      console.error('✗ Error general al capturar:', error)
-      toast.error('Error al capturar barcode')
+      console.error('✗ Error al procesar recorte:', error)
+      toast.error('Error al procesar imagen recortada')
+    } finally {
+      setProcessingCrop(false)
     }
   }
 
@@ -478,78 +603,143 @@ function ProductosPageContent() {
                   </div>
                 )}
 
-                {/* Canvas para mostrar video en tiempo real */}
-                <div
-                  ref={scannerViewportRef}
-                  className="relative bg-black rounded-lg overflow-hidden mb-4 mx-auto"
-                  style={{
-                    backgroundColor: '#000000',
-                    width: scannerViewportWidth,
-                    aspectRatio: safeCameraAspectRatio,
-                    maxHeight: '70vh'
-                  }}
-                >
-                  <canvas
-                    ref={canvasRef}
+                {!manualCropMode ? (
+                  <div
+                    ref={scannerViewportRef}
+                    className="relative bg-black rounded-lg overflow-hidden mb-4 mx-auto"
                     style={{
-                      width: '100%',
-                      height: '100%',
                       backgroundColor: '#000000',
-                      objectFit: 'contain',
-                      display: 'block'
-                    }}
-                  />
-                  {/* Video element - pequeño para que el navegador capture correctamente */}
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    style={{
-                      position: 'absolute',
-                      bottom: '10px',
-                      right: '10px',
-                      width: cameraPreviewWidth,
-                      height: 'auto',
+                      width: scannerViewportWidth,
                       aspectRatio: safeCameraAspectRatio,
-                      backgroundColor: '#000000',
-                      border: '2px solid #10b981',
-                      borderRadius: '4px',
-                      zIndex: 10,
-                      display: 'block',
-                      opacity: 0.8
+                      maxHeight: '70vh'
                     }}
-                  />
-                  {/* Indicador de cámara activa */}
-                  <div className="absolute top-3 right-3 flex items-center gap-2 bg-green-600 text-white px-3 py-1 rounded-full text-xs font-semibold">
-                    <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
-                    Cámara Activa
-                  </div>
-                  {/* Reticle para enfoque */}
-                  <div className="absolute inset-0 pointer-events-none">
-                    <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
-                      <div className="w-64 h-64 border-2 border-yellow-400 rounded" style={{ opacity: 0.5 }}></div>
+                  >
+                    <canvas
+                      ref={canvasRef}
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        backgroundColor: '#000000',
+                        objectFit: 'contain',
+                        display: 'block'
+                      }}
+                    />
+                    <video
+                      ref={videoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      style={{
+                        position: 'absolute',
+                        bottom: '10px',
+                        right: '10px',
+                        width: cameraPreviewWidth,
+                        height: 'auto',
+                        aspectRatio: safeCameraAspectRatio,
+                        backgroundColor: '#000000',
+                        border: '2px solid #10b981',
+                        borderRadius: '4px',
+                        zIndex: 10,
+                        display: 'block',
+                        opacity: 0.8
+                      }}
+                    />
+                    <div className="absolute top-3 right-3 flex items-center gap-2 bg-green-600 text-white px-3 py-1 rounded-full text-xs font-semibold">
+                      <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                      Cámara Activa
+                    </div>
+                    <div className="absolute inset-0 pointer-events-none">
+                      <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
+                        <div className="w-64 h-64 border-2 border-yellow-400 rounded" style={{ opacity: 0.5 }}></div>
+                      </div>
                     </div>
                   </div>
-                </div>
+                ) : (
+                  <div
+                    ref={manualCropContainerRef}
+                    className="relative bg-black rounded-lg overflow-hidden mb-4 mx-auto touch-none"
+                    style={{
+                      backgroundColor: '#000000',
+                      width: scannerViewportWidth,
+                      aspectRatio: safeCameraAspectRatio,
+                      maxHeight: '70vh'
+                    }}
+                    onMouseDown={(e) => beginCropSelection(e.clientX, e.clientY)}
+                    onMouseMove={(e) => updateCropSelection(e.clientX, e.clientY)}
+                    onMouseUp={endCropSelection}
+                    onMouseLeave={endCropSelection}
+                    onTouchStart={(e) => {
+                      const touch = e.touches[0]
+                      if (touch) beginCropSelection(touch.clientX, touch.clientY)
+                    }}
+                    onTouchMove={(e) => {
+                      const touch = e.touches[0]
+                      if (touch) updateCropSelection(touch.clientX, touch.clientY)
+                    }}
+                    onTouchEnd={endCropSelection}
+                  >
+                    <canvas
+                      ref={manualCanvasRef}
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        backgroundColor: '#000000',
+                        objectFit: 'contain',
+                        display: 'block'
+                      }}
+                    />
+                    {manualCropRect && (
+                      <div
+                        className="absolute border-2 border-yellow-400 bg-yellow-300/10"
+                        style={{
+                          left: manualCropRect.x,
+                          top: manualCropRect.y,
+                          width: manualCropRect.width,
+                          height: manualCropRect.height,
+                        }}
+                      />
+                    )}
+                  </div>
+                )}
 
                 {/* Instrucciones */}
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
                   <p className="text-sm text-gray-700">
-                    <strong>Instrucciones:</strong> Posiciona el código de barras dentro del cuadro de video. 
-                    Asegúrate de que esté bien iluminado y enfocado antes de capturar.
+                    <strong>Instrucciones:</strong>{' '}
+                    {!manualCropMode
+                      ? 'Primero congela el frame para recortar manualmente el área del código.'
+                      : 'Dibuja el recorte sobre el código de barras, luego mejora la imagen y escanea.'}
                   </p>
                 </div>
 
                 {/* Botones */}
                 <div className="flex gap-3">
-                  <button
-                    onClick={captureAndScan}
-                    className="btn btn-primary flex-1 flex items-center justify-center gap-2"
-                  >
-                    <Scan size={20} />
-                    Capturar Código
-                  </button>
+                  {!manualCropMode ? (
+                    <button
+                      onClick={captureForManualCrop}
+                      className="btn btn-primary flex-1 flex items-center justify-center gap-2"
+                    >
+                      <Scan size={20} />
+                      Congelar para Recortar
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        onClick={processManualCropAndScan}
+                        disabled={processingCrop}
+                        className="btn btn-primary flex-1 flex items-center justify-center gap-2 disabled:opacity-60"
+                      >
+                        <Scan size={20} />
+                        {processingCrop ? 'Procesando...' : 'Mejorar y Escanear'}
+                      </button>
+                      <button
+                        onClick={() => setManualCropMode(false)}
+                        className="btn btn-secondary flex-1"
+                      >
+                        Volver a Cámara
+                      </button>
+                    </>
+                  )}
                   <button
                     onClick={stopScanner}
                     className="btn btn-secondary flex-1"

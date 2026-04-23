@@ -59,6 +59,7 @@ export interface BarcodePreprocessOptions {
   densityThreshold?: number
   marginRatio?: number
   minComponentArea?: number
+  autoDetectRegion?: boolean
 }
 
 type ComponentBounds = {
@@ -274,7 +275,22 @@ export const preprocessBarcodeFrameToBlob = async (
 
   sourceContext.drawImage(video, 0, 0, sourceWidth, sourceHeight)
   const sourceImageData = sourceContext.getImageData(0, 0, sourceWidth, sourceHeight)
-  const rgba = sourceImageData.data
+
+  return preprocessBarcodeImageDataToBlob(sourceImageData, options)
+}
+
+export const preprocessBarcodeImageDataToBlob = async (
+  imageData: ImageData,
+  options: BarcodePreprocessOptions = {}
+): Promise<Blob | null> => {
+  const sourceWidth = imageData.width
+  const sourceHeight = imageData.height
+  const rgba = imageData.data
+
+  const marginRatio = options.marginRatio ?? 0.12
+  const densityThreshold = options.densityThreshold ?? 0.1
+  const minComponentArea = options.minComponentArea ?? 12
+  const autoDetectRegion = options.autoDetectRegion ?? true
 
   const grayscale = new Uint8Array(sourceWidth * sourceHeight)
   const darkMask = new Uint8Array(sourceWidth * sourceHeight)
@@ -298,29 +314,43 @@ export const preprocessBarcodeFrameToBlob = async (
     }
   }
 
-  const averageDensity = rowCounts.reduce((sum, count) => sum + count / sourceWidth, 0) / sourceHeight
-  const bandThreshold = Math.max(densityThreshold, averageDensity + 0.02)
-  const denseBand = findLongestDenseBand(rowCounts, sourceWidth, bandThreshold)
+  let cropBounds: { x: number; y: number; width: number; height: number } | null = null
 
-  const band = denseBand ?? {
-    start: Math.max(0, Math.floor(sourceHeight * 0.2)),
-    end: Math.min(sourceHeight - 1, Math.floor(sourceHeight * 0.8)),
+  if (autoDetectRegion) {
+    const averageDensity = rowCounts.reduce((sum, count) => sum + count / sourceWidth, 0) / sourceHeight
+    const bandThreshold = Math.max(densityThreshold, averageDensity + 0.02)
+    const denseBand = findLongestDenseBand(rowCounts, sourceWidth, bandThreshold)
+
+    const band = denseBand ?? {
+      start: Math.max(0, Math.floor(sourceHeight * 0.2)),
+      end: Math.min(sourceHeight - 1, Math.floor(sourceHeight * 0.8)),
+    }
+
+    const components = findConnectedComponents(
+      darkMask,
+      sourceWidth,
+      sourceHeight,
+      band,
+      minComponentArea
+    )
+
+    cropBounds = mergeComponentBounds(
+      components.length > 0
+        ? components
+        : [
+            {
+              minX: 0,
+              minY: band.start,
+              maxX: sourceWidth - 1,
+              maxY: band.end,
+              area: sourceWidth * (band.end - band.start + 1),
+            },
+          ],
+      sourceWidth,
+      sourceHeight,
+      marginRatio
+    )
   }
-
-  const components = findConnectedComponents(
-    darkMask,
-    sourceWidth,
-    sourceHeight,
-    band,
-    minComponentArea
-  )
-
-  const cropBounds = mergeComponentBounds(
-    components.length > 0 ? components : [{ minX: 0, minY: band.start, maxX: sourceWidth - 1, maxY: band.end, area: sourceWidth * (band.end - band.start + 1) }],
-    sourceWidth,
-    sourceHeight,
-    marginRatio
-  )
 
   const targetX = cropBounds?.x ?? 0
   const targetY = cropBounds?.y ?? 0
@@ -334,18 +364,26 @@ export const preprocessBarcodeFrameToBlob = async (
   const outputContext = outputCanvas.getContext('2d', { willReadFrequently: true })
   if (!outputContext) return null
 
-  const croppedImageData = sourceContext.getImageData(targetX, targetY, targetWidth, targetHeight)
+  const croppedImageData = outputContext.createImageData(targetWidth, targetHeight)
   const croppedData = croppedImageData.data
 
-  for (let i = 0; i < croppedData.length; i += 4) {
-    const luminance = Math.round(
-      croppedData[i] * 0.299 + croppedData[i + 1] * 0.587 + croppedData[i + 2] * 0.114
-    )
-    const binaryValue = luminance <= threshold ? 0 : 255
-    croppedData[i] = binaryValue
-    croppedData[i + 1] = binaryValue
-    croppedData[i + 2] = binaryValue
-    croppedData[i + 3] = 255
+  for (let y = 0; y < targetHeight; y += 1) {
+    for (let x = 0; x < targetWidth; x += 1) {
+      const sourcePixelIndex = ((targetY + y) * sourceWidth + (targetX + x)) * 4
+      const destPixelIndex = (y * targetWidth + x) * 4
+
+      const luminance = Math.round(
+        rgba[sourcePixelIndex] * 0.299 +
+          rgba[sourcePixelIndex + 1] * 0.587 +
+          rgba[sourcePixelIndex + 2] * 0.114
+      )
+      const binaryValue = luminance <= threshold ? 0 : 255
+
+      croppedData[destPixelIndex] = binaryValue
+      croppedData[destPixelIndex + 1] = binaryValue
+      croppedData[destPixelIndex + 2] = binaryValue
+      croppedData[destPixelIndex + 3] = 255
+    }
   }
 
   outputContext.putImageData(croppedImageData, 0, 0)

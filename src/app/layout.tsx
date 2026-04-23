@@ -5,6 +5,9 @@ import './globals.css'
 export const metadata: Metadata = {
   title: 'Farmacia Sara Sanchez',
   description: 'Sistema de gestión de farmacia moderno y eficiente',
+  icons: {
+    icon: '/icon.svg',
+  },
 }
 
 export default function RootLayout({
