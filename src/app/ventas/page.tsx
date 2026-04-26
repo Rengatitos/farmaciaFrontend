@@ -32,6 +32,9 @@ export default function VentasPage() {
   const [ventas, setVentas] = useState<Venta[]>([])
   const [filteredVentas, setFilteredVentas] = useState<Venta[]>([])
   const [selectedVenta, setSelectedVenta] = useState<Venta | null>(null)
+  const [detalleProductos, setDetalleProductos] = useState<
+    Record<number, { nombre: string; codigo_barras: string }>
+  >({})
   const [filterMonth, setFilterMonth] = useState<string>(
     new Date().toISOString().slice(0, 7)
   )
@@ -73,6 +76,31 @@ export default function VentasPage() {
       const cabecera = ventaCompleta?.venta || venta
       const detalles = ventaCompleta?.detalles || venta.detalles || []
 
+      const uniqueProductIds = Array.from(
+        new Set(detalles.map((d: any) => d.producto_id).filter(Boolean))
+      ) as number[]
+
+      if (uniqueProductIds.length > 0) {
+        const productosResult = await Promise.allSettled(
+          uniqueProductIds.map((productoId) => apiClient.getProductoById(productoId))
+        )
+
+        const productosMap: Record<number, { nombre: string; codigo_barras: string }> = {}
+        productosResult.forEach((resultado, index) => {
+          if (resultado.status === 'fulfilled') {
+            const producto = resultado.value
+            productosMap[uniqueProductIds[index]] = {
+              nombre: producto.nombre,
+              codigo_barras: producto.codigo_barras,
+            }
+          }
+        })
+
+        setDetalleProductos(productosMap)
+      } else {
+        setDetalleProductos({})
+      }
+
       setSelectedVenta({
         ...venta,
         ...cabecera,
@@ -81,6 +109,7 @@ export default function VentasPage() {
     } catch (error) {
       // Si falla la consulta detallada, se muestra la data resumida ya cargada.
       setSelectedVenta(venta)
+      setDetalleProductos({})
       toast.error('Mostrando detalle resumido de la venta')
     }
   }
@@ -217,7 +246,7 @@ export default function VentasPage() {
                     <thead className="border-b border-gray-200 bg-gray-50">
                       <tr>
                         <th className="text-left py-3 px-4 font-semibold">
-                          Producto ID
+                          Producto
                         </th>
                         <th className="text-left py-3 px-4 font-semibold">
                           Cantidad
@@ -237,7 +266,12 @@ export default function VentasPage() {
                           className="border-b border-gray-100 hover:bg-gray-50"
                         >
                           <td className="py-3 px-4 text-gray-900">
-                            {detalle.producto_id}
+                            <div className="font-medium">
+                              {detalleProductos[detalle.producto_id]?.nombre || `Producto ID: ${detalle.producto_id}`}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              {detalleProductos[detalle.producto_id]?.codigo_barras || 'Codigo de barras no disponible'}
+                            </div>
                           </td>
                           <td className="py-3 px-4 text-gray-900">
                             {detalle.cantidad}

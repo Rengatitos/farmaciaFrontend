@@ -95,6 +95,11 @@ class ApiClient {
     return response.data
   }
 
+  async getProductoById(productoId: number) {
+    const response = await this.client.get<Producto>(`/productos/id/${productoId}`)
+    return response.data
+  }
+
   async createProducto(producto: ProductoCreateRequest) {
     const response = await this.client.post<Producto>('/productos', producto)
     return response.data

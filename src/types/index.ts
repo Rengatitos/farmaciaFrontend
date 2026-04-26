@@ -114,6 +114,8 @@ export interface Venta {
   documento_cliente?: string
   nombre_cliente?: string
   total: number
+  subtotal_sin_igv?: number
+  igv?: number
   estado: 'completada'
   detalles: DetalleVenta[]
 }

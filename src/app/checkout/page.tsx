@@ -42,6 +42,10 @@ export default function CheckoutPage() {
 
   if (!user) return null
 
+  const totalConIgv = getTotal()
+  const subtotalSinIgv = totalConIgv / 1.18
+  const montoIgv = totalConIgv - subtotalSinIgv
+
   const handleRemoveItem = (id: string) => {
     removeItem(id)
     toast.success('Producto removido del carrito')
@@ -226,16 +230,16 @@ export default function CheckoutPage() {
               <div className="flex justify-end mb-2">
                 <div className="w-64">
                   <div className="flex justify-between text-gray-700 mb-2">
-                    <span>Subtotal:</span>
-                    <span>{formatCurrency(venta.total)}</span>
+                    <span>Valor de Venta (sin IGV):</span>
+                    <span>{formatCurrency(venta.subtotal_sin_igv ?? (venta.total / 1.18))}</span>
                   </div>
                   <div className="flex justify-between text-gray-700 mb-3">
-                    <span>IGV (18%):</span>
-                    <span>{formatCurrency(venta.total * 0.18)}</span>
+                    <span>IGV incluido (18%):</span>
+                    <span>{formatCurrency(venta.igv ?? (venta.total - venta.total / 1.18))}</span>
                   </div>
                   <div className="flex justify-between text-xl font-bold text-gray-900 pt-3 border-t-2 border-gray-300">
                     <span>Total a Pagar:</span>
-                    <span>{formatCurrency(venta.total * 1.18)}</span>
+                    <span>{formatCurrency(venta.total)}</span>
                   </div>
                 </div>
               </div>
@@ -462,16 +466,16 @@ export default function CheckoutPage() {
                 {/* Totals */}
                 <div className="space-y-2 pt-4 border-t border-gray-200">
                   <div className="flex justify-between text-sm text-gray-600">
-                    <span>Subtotal:</span>
-                    <span>{formatCurrency(getTotal())}</span>
+                    <span>Valor de Venta (sin IGV):</span>
+                    <span>{formatCurrency(subtotalSinIgv)}</span>
                   </div>
                   <div className="flex justify-between text-sm text-gray-600">
-                    <span>IGV (18%):</span>
-                    <span>{formatCurrency(getTotal() * 0.18)}</span>
+                    <span>IGV incluido (18%):</span>
+                    <span>{formatCurrency(montoIgv)}</span>
                   </div>
                   <div className="flex justify-between text-lg font-bold text-gray-900 pt-2 border-t border-gray-200">
                     <span>Total:</span>
-                    <span>{formatCurrency(getTotal() * 1.18)}</span>
+                    <span>{formatCurrency(totalConIgv)}</span>
                   </div>
                 </div>
 
